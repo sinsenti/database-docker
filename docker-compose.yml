@@ -1,0 +1,44 @@
+version: "3.8" # You can remove this line if using a very recent Docker Compose version
+
+services:
+  web:
+    build:
+      context: . # Build context is the directory containing docker-compose.yml
+      dockerfile: Dockerfile.app # Use the Dockerfile.app in the context
+    ports:
+      - "5000:5000" # Map host port 5000 to container port 5000
+    volumes:
+      # Mount the local 'app' directory into the container for live code changes during development
+      - ./app:/app
+    depends_on:
+      # Ensure the database service starts before the web service
+      - db
+    environment:
+      # Pass database credentials to the web container as environment variables
+      # These are read by app.py (see db_config)
+      DB_HOST: db
+      DB_USER: me_1
+      DB_PASSWORD: my_p # Replace with your chosen password
+      DB_NAME: my_db # Replace with your chosen database name
+      FLASK_DEBUG: 1 # Set Flask debug mode (useful for development)
+
+  db:
+    # Use a standard MariaDB image
+    # Choose a stable version like 10.6 or 10.9
+    image: mariadb:10.6
+    environment:
+      # These variables initialize the database on first run
+      MYSQL_ROOT_PASSWORD: your_secure_root_password # Set a strong password for the root user
+      MYSQL_DATABASE: my_db # Create the database named 'my_db'
+      MYSQL_USER: me_1 # Create the user 'me_1'
+      MYSQL_PASSWORD: my_p # Set the password for 'me_1'
+    volumes:
+      # Persist database data to a named volume
+      - db_data:/var/lib/mysql
+    # Optional: Map database port for external access (e.g., GUI tool)
+    # ports:
+    #   - "3306:3306"
+    command: --default-authentication-plugin=mysql_native_password # Recommended for compatibility
+
+volumes:
+  db_data: # Define the named volume for database persistence
