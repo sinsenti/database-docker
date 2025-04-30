@@ -1,21 +1,21 @@
 from flask import Flask, render_template, request, redirect, url_for, jsonify
 import mysql.connector
 import os
-import time  # Import time for delays
+import time
 
 app = Flask(__name__)
 
 # Database configuration
-# IMPORTANT: The 'host' is the name of the database service in docker-compose.yml
-# It's highly recommended to use environment variables for production
 db_config = {
-    "host": os.environ.get(
-        "DB_HOST", "db"
-    ),  # Use environment variable, default to 'db'
+    "host": os.environ.get("DB_HOST", "db"),
     "user": os.environ.get("DB_USER", "me_1"),
     "password": os.environ.get("DB_PASSWORD", "my_p"),
     "database": os.environ.get("DB_NAME", "my_db"),
 }
+
+# --- NEW: Hardcoded Admin Credentials (NOT SECURE FOR PRODUCTION) ---
+ADMIN_EMAIL = "admin@admin"
+ADMIN_PASSWORD = "admin_password_123"  # Replace with a slightly better dummy password
 
 
 def get_db_connection():
@@ -39,7 +39,6 @@ def get_db_connection():
 # Function to create the users table if it doesn't exist
 def create_users_table():
     """Checks if the 'users' table exists and creates it if not."""
-    # Use retry logic from get_db_connection
     conn = get_db_connection()
     if conn is None:
         print("Skipping table creation due to database connection failure.")
@@ -72,7 +71,7 @@ def index():
     """Renders the index page with users list and add user form."""
     conn = get_db_connection()
     users = []
-    error = None  # Initialize error
+    error = None
     if conn is None:
         error = "Database connection failed. Please check database service."
     else:
@@ -100,12 +99,12 @@ def add_user():
     email = request.form.get("email")
 
     if not name or not email:
-        # In a real app, you'd provide feedback to the user
+        # Redirect back with an error message if fields are missing (optional enhancement)
         return redirect(url_for("index"))
 
     conn = get_db_connection()
     if conn is None:
-        # In a real app, you'd provide feedback to the user
+        # Redirect back with an error message if connection failed (optional enhancement)
         return redirect(url_for("index"))
 
     cursor = conn.cursor()
@@ -115,7 +114,7 @@ def add_user():
     except mysql.connector.Error as err:
         print(f"Error adding user: {err}")
         conn.rollback()
-        # In a real app, you'd provide feedback to the user
+        # Redirect back with an error message (optional enhancement)
     finally:
         if cursor:
             cursor.close()
@@ -125,62 +124,55 @@ def add_user():
     return redirect(url_for("index"))  # Redirect back to the index page after adding
 
 
-# --- Route to handle deleting a user ---
+# --- Modify delete_user to require admin credentials ---
 @app.route("/delete_user/<int:user_id>", methods=["POST"])
 def delete_user(user_id):
-    """Handles the deletion of a user by ID."""
-    conn = get_db_connection()
-    if conn is None:
-        # In a real app, you'd provide feedback to the user
-        return redirect(url_for("index"))
+    """Handles the deletion of a user by ID, requires admin credentials."""
+    admin_email = request.form.get("admin_email")
+    admin_password = request.form.get("admin_password")
 
-    cursor = conn.cursor()
-    try:
-        # Execute the DELETE query
-        cursor.execute("DELETE FROM users WHERE id = %s", (user_id,))
-        conn.commit()
-        # You could check cursor.rowcount here to see if a row was actually deleted
-        # if cursor.rowcount == 0:
-        #     print(f"User with ID {user_id} not found for deletion.")
-        # else:
-        #     print(f"User with ID {user_id} deleted successfully.")
+    # --- NEW: Basic Admin Authentication Check (NOT SECURE) ---
+    if admin_email == ADMIN_EMAIL and admin_password == ADMIN_PASSWORD:
+        conn = get_db_connection()
+        if conn is None:
+            # Redirect back with an error message (optional enhancement)
+            return redirect(url_for("index"))
 
-    except mysql.connector.Error as err:
-        print(f"Error deleting user with ID {user_id}: {err}")
-        conn.rollback()
-        # In a real app, you'd provide feedback to the user
-    finally:
-        if cursor:
-            cursor.close()
-        if conn and conn.is_connected():
-            conn.close()
+        cursor = conn.cursor()
+        try:
+            # Execute the DELETE query
+            cursor.execute("DELETE FROM users WHERE id = %s", (user_id,))
+            conn.commit()
+            # You could check cursor.rowcount here to see if a row was actually deleted
+            # if cursor.rowcount == 0:
+            #     print(f"User with ID {user_id} not found for deletion.")
+            # else:
+            #     print(f"User with ID {user_id} deleted successfully.")
 
-    return redirect(url_for("index"))  # Redirect back to the index page after deletion
+        except mysql.connector.Error as err:
+            print(f"Error deleting user with ID {user_id}: {err}")
+            conn.rollback()
+            # Redirect back with an error message (optional enhancement)
+        finally:
+            if cursor:
+                cursor.close()
+            if conn and conn.is_connected():
+                conn.close()
+    else:
+        # --- NEW: Handle Authentication Failure ---
+        print("Admin authentication failed for delete request.")
+        # In a real app, you'd provide feedback to the user, e.g., redirect with a query param
+        # return redirect(url_for("index", error="Authentication Failed")) # requires index route to handle 'error' query param
+
+    return redirect(url_for("index"))  # Redirect back to the index page
 
 
 # You can keep the remove user API route if you still need it for other purposes
 # @app.route("/users/<int:user_id>", methods=["DELETE"])
 # def remove_user(user_id):
 #     """API endpoint to remove a user by ID (using DELETE method)."""
-#     conn = get_db_connection()
-#     if conn is None:
-#         return jsonify({"error": "Database connection failed"}), 500
-#     cursor = conn.cursor()
-#     try:
-#         cursor.execute("DELETE FROM users WHERE id = %s", (user_id,))
-#         conn.commit()
-#         if cursor.rowcount == 0:
-#             return jsonify({"message": "User not found"}), 404
-#         return jsonify({"message": "User deleted successfully"}), 200
-#     except mysql.connector.Error as err:
-#         print(f"Error deleting user: {err}")
-#         conn.rollback()
-#         return jsonify({"error": "Error deleting user"}), 500
-#     finally:
-#         if cursor:
-#             cursor.close()
-#         if conn and conn.is_connected():
-#              conn.close()
+#     # ... (your existing remove_user code) ...
+#     pass
 
 
 if __name__ == "__main__":
